@@ -159,6 +159,10 @@ public class HostKey {
    * if the hostname matches ANY of the patterns and does not match any negated pattern.
    * </p>
    * <p>
+   * The comparison is case-insensitive, as in OpenSSH's {@code match_hostname()}. The single
+   * pattern matcher {@link #matchesWildcardPattern(String, String)} itself stays case-sensitive.
+   * </p>
+   * <p>
    * Examples:
    * </p>
    * <ul>
@@ -186,8 +190,10 @@ public class HostKey {
       return false;
     }
 
-    // Split by comma and check each pattern. As in OpenSSH's match_hostname(), a matching
-    // negated pattern ("!pattern") rejects the host even if another pattern matches.
+    // Split by comma and check each pattern. As in OpenSSH's match_hostname(), the host and the
+    // patterns are compared in lower case, and a matching negated pattern ("!pattern") rejects the
+    // host even if another pattern matches.
+    String lowerHost = _host.toLowerCase(Locale.ROOT);
     boolean matched = false;
     int i = 0;
     int hostslen = hosts.length();
@@ -196,12 +202,12 @@ public class HostKey {
       if (j == -1) {
         j = hostslen;
       }
-      String pattern = hosts.substring(i, j).trim();
+      String pattern = hosts.substring(i, j).trim().toLowerCase(Locale.ROOT);
       boolean negated = pattern.startsWith("!");
       if (negated) {
         pattern = pattern.substring(1);
       }
-      if (matchesWildcardPattern(pattern, _host)) {
+      if (matchesWildcardPattern(pattern, lowerHost)) {
         if (negated) {
           return false;
         }

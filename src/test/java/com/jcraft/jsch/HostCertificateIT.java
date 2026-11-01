@@ -4,6 +4,7 @@ import static com.jcraft.jsch.ResourceUtil.getResourceFile;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.condition.JRE.JAVA_15;
 
 import com.github.valfirst.slf4jtest.LoggingEvent;
@@ -16,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -253,6 +255,36 @@ public class HostCertificateIT {
     String portHost = "[" + sshdContainer.getHost() + "]:" + sshdContainer.getFirstMappedPort();
     String knownHosts = "@cert-authority *,!" + portHost + " " + caPublicKey + "\n@revoked * "
         + caPublicKey + "\n" + portHost + " " + hostPublicKey + "\n";
+    ssh.setKnownHosts(new ByteArrayInputStream(knownHosts.getBytes(StandardCharsets.UTF_8)));
+
+    Session session = setup(ssh, "ssh-ed25519-cert-v01@openssh.com");
+    assertThrows(JSchRevokedHostKeyException.class, () -> connectSftp(session));
+  }
+
+  /**
+   * Tests that a revoked CA stays a terminal failure when the {@code @revoked} entry's case differs
+   * from the host, a negated pattern excludes the host from the CA's {@code @cert-authority} entry
+   * and the raw host key is pinned. With the default {@code host_certificate_to_key_fallback=yes},
+   * the connection must not fall back to that key.
+   *
+   * @throws Exception if any error occurs during the test setup.
+   */
+  @Test
+  public void hostKeyTestRevokedCAMixedCaseNegatedTrustEntryPinnedHostKey() throws Exception {
+    JSch ssh = new JSch();
+    ssh.addIdentity(
+        getResourceFile(this.getClass(), CERTIFICATES_BASE_FOLDER + "/user_keys/id_ecdsa_nistp521"),
+        getResourceFile(this.getClass(),
+            CERTIFICATES_BASE_FOLDER + "/user_keys/id_ecdsa_nistp521.pub"),
+        null);
+
+    String caPublicKey = readResource("certificates/ca/ca_jsch_key.pub");
+    String hostPublicKey = readResource(CERTIFICATES_BASE_FOLDER + "/ssh_host_ed25519_key.pub");
+    String portHost = "[" + sshdContainer.getHost() + "]:" + sshdContainer.getFirstMappedPort();
+    String revokedHost = portHost.toUpperCase(Locale.ROOT);
+    assumeFalse(revokedHost.equals(portHost), "mapped host has no letters to change case of");
+    String knownHosts = "@cert-authority *,!" + portHost + " " + caPublicKey + "\n@revoked "
+        + revokedHost + " " + caPublicKey + "\n" + portHost + " " + hostPublicKey + "\n";
     ssh.setKnownHosts(new ByteArrayInputStream(knownHosts.getBytes(StandardCharsets.UTF_8)));
 
     Session session = setup(ssh, "ssh-ed25519-cert-v01@openssh.com");

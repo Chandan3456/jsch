@@ -334,6 +334,50 @@ public class OpenSshCertificateUtilTest {
   }
 
   /**
+   * Test that a @revoked line whose case differs from the host still applies when a negated pattern
+   * excludes the host from the CA's @cert-authority line.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"evil.example.com", "Evil.example.com"})
+  public void testIsCertificateSignedByTrustedCA_caRevokedMixedCaseForNegatedHost(String host)
+      throws Exception {
+    JSch jsch = new JSch();
+    KnownHosts knownHosts = new KnownHosts(jsch);
+    String base64CaPublicKey = "AAAAB3NzaC1yc2EAAAADAQABAAABAQ==";
+    String lines = "@cert-authority *.example.com,!evil.example.com ssh-rsa " + base64CaPublicKey
+        + "\n@revoked EVIL.Example.com ssh-rsa " + base64CaPublicKey + "\n";
+    knownHosts.setKnownHosts(new ByteArrayInputStream(Util.str2byte(lines)));
+
+    byte[] keyBytes =
+        Util.fromBase64(Util.str2byte(base64CaPublicKey), 0, base64CaPublicKey.length());
+
+    assertThrows(JSchRevokedHostKeyException.class,
+        () -> OpenSshCertificateUtil.isCertificateSignedByTrustedCA(knownHosts, host, keyBytes),
+        "Should honour a @revoked entry whose case differs from the host");
+  }
+
+  /**
+   * Test that a negated pattern on a @cert-authority line excludes the host whatever its case.
+   */
+  @Test
+  public void testIsCertificateSignedByTrustedCA_negatedHostPatternMixedCase() throws Exception {
+    JSch jsch = new JSch();
+    KnownHosts knownHosts = new KnownHosts(jsch);
+    String base64CaPublicKey = "AAAAB3NzaC1yc2EAAAADAQABAAABAQ==";
+    String line =
+        "@cert-authority *.example.com,!evil.example.com ssh-rsa " + base64CaPublicKey + "\n";
+    knownHosts.setKnownHosts(new ByteArrayInputStream(Util.str2byte(line)));
+
+    byte[] keyBytes =
+        Util.fromBase64(Util.str2byte(base64CaPublicKey), 0, base64CaPublicKey.length());
+
+    assertFalse(OpenSshCertificateUtil.isCertificateSignedByTrustedCA(knownHosts,
+        "Evil.example.com", keyBytes), "CA must not be trusted for a negated host in any case");
+    assertTrue(OpenSshCertificateUtil.isCertificateSignedByTrustedCA(knownHosts, "Good.Example.com",
+        keyBytes), "CA should be trusted for other hosts in any case");
+  }
+
+  /**
    * Test that a hashed @revoked line is honoured for a host a negated pattern excludes from the
    * CA's @cert-authority line.
    */
